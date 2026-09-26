@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>個人球類入球與失球數據記錄器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+        
+        * {
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+        
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: #0f172a;
+            overflow-x: hidden;
+        }
+        
+        ::-webkit-scrollbar { width: 0; height: 0; }
+        
+        .score-display {
+            font-size: 4rem;
+            font-weight: 900;
+            line-height: 1;
+            text-shadow: 0 0 40px rgba(34, 197, 94, 0.3);
+        }
+        
+        .action-btn {
+            height: 70px;
+            font-size: 18px;
+            display: flex !important;
+            align-items: center;
+            justify-content: center;
+            border-radius: 16px;
+            transition: all 0.1s ease;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+            pointer-events: auto !important;
+            touch-action: manipulation;
+            position: relative;
+            z-index: 70;
+        }
+        
+        .bottom-bar {
+            pointer-events: auto !important;
+        }
+        
+        .bottom-bar button {
+            pointer-events: auto !important;
+            touch-action: manipulation;
+        }
+
+        .action-btn:active { transform: scale(0.95); }
+
+        /* Bottom fixed unified bar */
+        .bottom-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(15, 23, 42, 0.98);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-top: 1px solid rgba(71, 85, 105, 0.5);
+            z-index: 9999 !important;
+            padding-bottom: env(safe-area-inset-bottom);
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Main content needs bottom padding for fixed elements */
+        main {
+            padding-bottom: 200px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.9));
+            border: 1px solid rgba(71, 85, 105, 0.5);
+        }
+        
+        .shot-dot {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: 700;
+            animation: popIn 0.2s ease;
+        }
+        
+        @keyframes popIn {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+        }
+        
+        .tab-btn.active {
+            background: linear-gradient(135deg, #22c55e, #10b981);
+            color: white;
+        }
+        
+        .history-item {
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.8));
+            border: 1px solid rgba(71, 85, 105, 0.3);
+        }
+        
+        .streak-active {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 20px rgba(245, 158, 11, 0.3); }
+            50% { box-shadow: 0 0 40px rgba(245, 158, 11, 0.6); }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-slate-900/95 backdrop-blur-md border-b border-slate-800 sticky top-0 z-50">
+        <div class="flex items-center justify-between px-4 py-3">
+            <select id="sport-type" onchange="updateSportPreset()" class="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+                <option value="basketball_free_throw">🏀 <span data-i18n="sport_free_throw">罰球</span></option>
+                <option value="basketball_three_pointer">🏀 <span data-i18n="sport_three_pointer">三分球</span></option>
+                <option value="football_penalty">⚽ <span data-i18n="sport_penalty">射門</span></option>
+                <option value="badminton_tennis">🏸 <span data-i18n="sport_badminton">擊球</span></option>
+                <option value="custom">🎯 <span data-i18n="sport_custom">自訂</span></option>
+            </select>
+            
+            <div class="flex items-center gap-2">
+                <button onclick="toggleSettings()" class="p-2 bg-slate-800 rounded-xl hover:bg-slate-700 transition">
+                    <i class="fa-solid fa-gear text-slate-300"></i>
+                </button>
+                <button onclick="toggleFullscreen()" class="p-2 bg-slate-800 rounded-xl hover:bg-slate-700 transition">
+                    <i class="fa-solid fa-expand text-slate-300"></i>
+                </button>
+                <button onclick="openResetModal()" class="p-2 bg-rose-500/20 rounded-xl hover:bg-rose-500/30 transition">
+                    <i class="fa-solid fa-rotate-left text-rose-400"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Settings Panel -->
+    <div id="settings-panel" class="hidden bg-slate-900 border-b border-slate-800 p-4">
+        <div class="flex items-center justify-between mb-3">
+            <span class="text-sm font-semibold text-slate-200" data-i18n="language">語言 / Language</span>
+            <select id="lang-select" onchange="changeLanguage(this.value)" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+                <option value="zh-TW">繁體中文</option>
+                <option value="zh-CN">简体中文</option>
+                <option value="en">English</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="flex-1 pb-32">
+        <!-- TAB 1: Counter -->
+        <section id="content-counter" class="tab-content">
+            <div class="px-4 pt-4 space-y-4">
+                <!-- Quick Settings Row -->
+                <div class="flex gap-3">
+                    <div class="flex-1">
+                        <label class="block text-xs text-slate-400 mb-1" data-i18n="target_label">目標次數</label>
+                        <input type="number" id="target-count" value="50" min="1" onchange="updateTargetDisplay()" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-xs text-slate-400 mb-1" data-i18n="note_label">備註</label>
+                        <input type="text" id="session-note" placeholder="自訂備註" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500">
+                    </div>
+                </div>
+
+                <!-- Big Score Display -->
+                <div class="text-center py-6">
+                    <div class="inline-flex flex-col items-center">
+                        <span class="text-slate-400 text-xs mb-1 uppercase tracking-wider" data-i18n="total_score">總計分</span>
+                        <div class="flex items-baseline gap-2">
+                            <span id="display-scored-count" class="score-display text-emerald-400">0</span>
+                            <span class="text-slate-500 text-3xl font-light">/</span>
+                            <span id="display-total-count" class="score-display text-slate-400">0</span>
+                        </div>
+                        <div class="mt-2 flex items-center gap-2">
+                            <span id="stat-accuracy" class="text-lg font-bold text-teal-400">0.0%</span>
+                            <span class="text-slate-500 text-xs" data-i18n="accuracy">命中率</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Streak badge -->
+                    <div id="streak-badge" class="hidden mt-3 inline-flex items-center gap-2 px-4 py-2 bg-amber-500/20 border border-amber-500/40 rounded-full">
+                        <i class="fa-solid fa-fire text-amber-400"></i>
+                        <span class="text-amber-400 font-bold" data-i18n="streak">連續命中</span> <span id="stat-current-streak">0</span>
+                    </div>
+                </div>
+
+                <!-- Stats Row -->
+                <div class="grid grid-cols-3 gap-2">
+                    <div class="stat-card rounded-xl p-3 text-center">
+                        <div class="text-xs text-slate-400" data-i18n="total_attempts">總次數</div>
+                        <div id="stat-total-attempts" class="text-xl font-bold text-white">0</div>
+                    </div>
+                    <div class="stat-card rounded-xl p-3 text-center">
+                        <div class="text-xs text-slate-400" data-i18n="max_streak">連中最高</div>
+                        <div id="stat-max-streak" class="text-xl font-bold text-emerald-400">0</div>
+                    </div>
+                    <div class="stat-card rounded-xl p-3 text-center">
+                        <div class="text-xs text-slate-400" data-i18n="missed">失球</div>
+                        <div id="display-missed-count" class="text-xl font-bold text-rose-400">0</div>
+                    </div>
+                </div>
+
+                <!-- Progress Bar -->
+                <div class="px-2">
+                    <div class="flex justify-between text-xs text-slate-400 mb-1">
+                        <span id="target-progress-text" data-i18n="progress">目標進度</span>: <span id="target-progress-detail">0 / 50</span>
+                        <span id="target-percentage-text">0%</span>
+                    </div>
+                    <div class="w-full bg-slate-800 rounded-full h-2">
+                        <div id="target-progress-bar" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <!-- Shot Sequence -->
+                <div class="px-2">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-xs text-slate-400">
+                            <i class="fa-solid fa-list-ol text-emerald-400 mr-1"></i><span data-i18n="shot_sequence">投球序列</span>
+                        </span>
+                        <button onclick="undoLastAttempt()" class="text-xs text-amber-400 hover:text-amber-300 px-2 py-1 rounded bg-slate-800 border border-slate-700 transition">
+                            <i class="fa-solid fa-rotate-left mr-1"></i><span data-i18n="undo">復原</span>
+                        </button>
+                    </div>
+                    <div id="shot-sequence-container" class="flex flex-wrap gap-1 min-h-[36px] max-h-[100px] p-2 bg-slate-900/50 rounded-xl border border-slate-800 overflow-hidden" style="overflow-y: auto;">
+                        <span class="text-xs text-slate-600 italic" data-i18n="no_shots_yet">尚未開始投球紀錄</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 2: Analytics -->
+        <section id="content-analytics" class="tab-content hidden">
+            <div class="px-4 pt-4 space-y-4">
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="stat-card rounded-xl p-4">
+                        <div class="text-xs text-emerald-400 font-semibold" data-i18n="career_scored">生涯總入球</div>
+                        <div id="analytics-total-scored" class="text-3xl font-black text-white mt-1">0</div>
+                    </div>
+                    <div class="stat-card rounded-xl p-4">
+                        <div class="text-xs text-rose-400 font-semibold" data-i18n="career_missed">生涯總失球</div>
+                        <div id="analytics-total-missed" class="text-3xl font-black text-white mt-1">0</div>
+                    </div>
+                    <div class="stat-card rounded-xl p-4">
+                        <div class="text-xs text-teal-400 font-semibold" data-i18n="avg_accuracy">平均命中率</div>
+                        <div id="analytics-avg-accuracy" class="text-3xl font-black text-white mt-1">0%</div>
+                    </div>
+                    <div class="stat-card rounded-xl p-4">
+                        <div class="text-xs text-amber-400 font-semibold" data-i18n="best_accuracy">最佳單次</div>
+                        <div id="analytics-best-accuracy" class="text-3xl font-black text-white mt-1">0%</div>
+                    </div>
+                </div>
+
+                <div class="stat-card rounded-2xl p-4">
+                    <h3 class="text-sm font-bold text-slate-200 mb-4"><i class="fa-solid fa-chart-line text-emerald-400 mr-2"></i><span data-i18n="accuracy_trend">命中率趨勢</span></h3>
+                    <div class="h-48"><canvas id="chart-accuracy-trend"></canvas></div>
+                </div>
+                
+                <div class="stat-card rounded-2xl p-4">
+                    <h3 class="text-sm font-bold text-slate-200 mb-4"><i class="fa-solid fa-chart-pie text-amber-400 mr-2"></i><span data-i18n="scored_vs_missed">入球 vs 失球</span></h3>
+                    <div class="h-48 flex items-center justify-center"><canvas id="chart-ratio"></canvas></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 3: History -->
+        <section id="content-history" class="tab-content hidden">
+            <div class="px-4 pt-4">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-base font-bold text-slate-200" data-i18n="practice_history">練習歷史</h3>
+                    <button onclick="exportCSV()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 rounded-lg transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-file-csv text-emerald-400"></i> <span data-i18n="export_csv">匯出 CSV</span>
+                    </button>
+                </div>
+                <div id="history-list-container" class="space-y-3 pb-4"></div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Bottom Unified Bar -->
+    <div class="bottom-bar">
+        <!-- Action Buttons Row -->
+        <div id="action-buttons-row" class="flex gap-3 px-4 pt-3 pb-2">
+            <button onclick="registerAttempt(false)" class="action-btn flex-1 bg-gradient-to-br from-rose-600 to-rose-800 border-2 border-rose-500 text-white flex flex-col items-center justify-center gap-1 rounded-xl">
+                <i class="fa-solid fa-circle-xmark text-2xl"></i>
+                <span class="font-bold text-base" data-i18n="missed_btn">失球</span>
+            </button>
+            <button onclick="registerAttempt(true)" class="action-btn flex-1 bg-gradient-to-br from-emerald-500 to-emerald-700 border-2 border-emerald-400 text-white flex flex-col items-center justify-center gap-1 rounded-xl">
+                <i class="fa-solid fa-circle-check text-2xl"></i>
+                <span class="font-bold text-base" data-i18n="scored_btn">入球</span>
+            </button>
+        </div>
+        <!-- Save Button Row -->
+        <div id="save-button-row" class="flex justify-center px-4 pb-2">
+            <button onclick="saveCurrentSession()" class="px-8 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-semibold rounded-xl transition flex items-center gap-2">
+                <i class="fa-solid fa-floppy-disk text-emerald-400"></i><span data-i18n="save_session">儲存本次練習</span>
+            </button>
+        </div>
+        <!-- Navigation Tabs -->
+        <div class="flex justify-around py-2 border-t border-slate-800">
+            <button onclick="switchTab('counter')" id="tab-counter" class="tab-btn active flex-1 flex flex-col items-center gap-1 py-2 px-4 rounded-xl">
+                <i class="fa-solid fa-bullseye text-xl"></i>
+                <span class="text-xs font-semibold" data-i18n="home">記錄</span>
+            </button>
+            <button onclick="switchTab('analytics')" id="tab-analytics" class="tab-btn text-slate-400 flex-1 flex flex-col items-center gap-1 py-2 px-4 rounded-xl hover:bg-slate-800/50 transition">
+                <i class="fa-solid fa-chart-line text-xl"></i>
+                <span class="text-xs font-semibold" data-i18n="analytics">分析</span>
+            </button>
+            <button onclick="switchTab('history')" id="tab-history" class="tab-btn text-slate-400 flex-1 flex flex-col items-center gap-1 py-2 px-4 rounded-xl hover:bg-slate-800/50 transition">
+                <i class="fa-solid fa-clock-rotate-left text-xl"></i>
+                <span class="text-xs font-semibold" data-i18n="history">歷史</span>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let state = {
+            sessions: [],
+            currentSession: {
+                sport: '籃球罰球', scored: 0, missed: 0, target: 50, note: '',
+                sequence: [], currentStreak: 0, maxStreak: 0,
+                startTime: null, shotTimestamps: [], targetReached: false
+            },
+            wakeLock: null
+        };
+
+        let accuracyTrendChart = null;
+        let ratioChart = null;
+        // i18n translations
+        const i18n = {
+            "zh-TW": {
+                "app_title": "個人球類入球與失球數據記錄器",
+                "language": "語言 / Language",
+                "target_label": "目標次數",
+                "note_label": "備註",
+                "total_score": "總計分",
+                "accuracy": "命中率",
+                "total_attempts": "總次數",
+                "max_streak": "連中最高",
+                "missed": "失球",
+                "progress": "目標進度",
+                "shot_sequence": "投球序列",
+                "undo": "復原",
+                "no_shots_yet": "尚未開始投球紀錄",
+                "career_scored": "生涯總入球",
+                "career_missed": "生涯總失球",
+                "avg_accuracy": "平均命中率",
+                "best_accuracy": "最佳單次",
+                "accuracy_trend": "命中率趨勢",
+                "scored_vs_missed": "入球 vs 失球",
+                "practice_history": "練習歷史",
+                "export_csv": "匯出 CSV",
+                "no_history": "尚無練習紀錄",
+                "save_session": "儲存本次練習",
+                "home": "記錄",
+                "analytics": "分析",
+                "history": "歷史",
+                "streak": "連續命中",
+                "reset_all": "確定要清空所有數據嗎？",
+                "reset_success": "已重置所有數據",
+                "save_success": "已儲存！",
+                "no_data_to_save": "尚未紀錄任何入球或失球！",
+                "deleted": "已刪除紀錄",
+                "autonomous": "自主練習",
+                "sport_free_throw": "罰球",
+                "sport_three_pointer": "三分球",
+                "sport_penalty": "射門",
+                "sport_badminton": "擊球",
+                "sport_custom": "自訂",
+                "missed_btn": "失球",
+                "scored_btn": "入球"
+            },
+            "zh-CN": {
+                "app_title": "个人球类入球与失球数据记录器",
+                "language": "语言 / Language",
+                "target_label": "目标次数",
+                "note_label": "备注",
+                "total_score": "总计分",
+                "accuracy": "命中率",
+                "total_attempts": "总次数",
+                "max_streak": "连中最高",
+                "missed": "失球",
+                "progress": "目标进度",
+                "shot_sequence": "投球序列",
+                "undo": "复原",
+                "no_shots_yet": "尚未开始投球记录",
+                "career_scored": "生涯总入球",
+                "career_missed": "生涯总失球",
+                "avg_accuracy": "平均命中率",
+                "best_accuracy": "最佳单次",
+                "accuracy_trend": "命中率趋势",
+                "scored_vs_missed": "入球 vs 失球",
+                "practice_history": "练习历史",
+                "export_csv": "导出 CSV",
+                "no_history": "尚无练习记录",
+                "save_session": "存储本次练习",
+                "home": "记录",
+                "analytics": "分析",
+                "history": "历史",
+                "streak": "连续命中",
+                "reset_all": "确定要清空所有数据吗？",
+                "reset_success": "已重置所有数据",
+                "save_success": "已存储！",
+                "no_data_to_save": "尚未记录任何入球或失球！",
+                "deleted": "已删除记录",
+                "autonomous": "自主练习",
+                "sport_free_throw": "罚球",
+                "sport_three_pointer": "三分球",
+                "sport_penalty": "射门",
+                "sport_badminton": "击球",
+                "sport_custom": "自定义",
+                "missed_btn": "失球",
+                "scored_btn": "入球"
+            },
+            "en": {
+                "app_title": "Ball Shot Tracker",
+                "language": "Language",
+                "target_label": "Target",
+                "note_label": "Note",
+                "total_score": "Total Score",
+                "accuracy": "Accuracy",
+                "total_attempts": "Total Attempts",
+                "max_streak": "Best Streak",
+                "missed": "Missed",
+                "progress": "Progress",
+                "shot_sequence": "Shot Sequence",
+                "undo": "Undo",
+                "no_shots_yet": "No shots yet",
+                "career_scored": "Career Scored",
+                "career_missed": "Career Missed",
+                "avg_accuracy": "Avg Accuracy",
+                "best_accuracy": "Best Accuracy",
+                "accuracy_trend": "Accuracy Trend",
+                "scored_vs_missed": "Scored vs Missed",
+                "practice_history": "Practice History",
+                "export_csv": "Export CSV",
+                "no_history": "No history yet",
+                "save_session": "Save Session",
+                "home": "Home",
+                "analytics": "Analytics",
+                "history": "History",
+                "streak": "Streak",
+                "reset_all": "Clear all data?",
+                "reset_success": "Data reset",
+                "save_success": "Saved!",
+                "no_data_to_save": "No shots recorded yet!",
+                "deleted": "Deleted",
+                "autonomous": "Autonomous Practice",
+                "sport_free_throw": "Free Throw",
+                "sport_three_pointer": "Three Pointer",
+                "sport_penalty": "Penalty Kick",
+                "sport_badminton": "Hit",
+                "sport_custom": "Custom",
+                "missed_btn": "Missed",
+                "scored_btn": "Scored"
+            }
+        };
+
+        let currentLang = localStorage.getItem('balltracker_lang') || 'zh-TW';
+
+        window.changeLanguage = function changeLanguage(lang) {
+            currentLang = lang;
+            localStorage.setItem('balltracker_lang', lang);
+            applyTranslations();
+        }
+
+        function applyTranslations() {
+            const t = i18n[currentLang] || i18n['zh-TW'];
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (t[key]) el.textContent = t[key];
+            });
+            document.title = t.app_title;
+            // Update placeholders
+            const noteInput = document.getElementById('session-note');
+            if (noteInput) noteInput.placeholder = currentLang === 'en' ? 'Custom note' : '自訂備註';
+        }
+
+        // Apply saved language on load
+        document.addEventListener('DOMContentLoaded', () => {
+            const select = document.getElementById('lang-select');
+            if (select) select.value = currentLang;
+            applyTranslations();
+        });
+
+
+        async function requestWakeLock() {
+            if ('wakeLock' in navigator) {
+                try { await navigator.wakeLock.request('screen'); } catch (err) { console.log('Wake Lock failed:', err); }
+            }
+        }
+
+        document.addEventListener('visibilitychange', async () => {
+            if (document.visibilityState === 'visible') await requestWakeLock();
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+            switch(e.code) {
+                case 'Space': e.preventDefault(); registerAttempt(true); hapticFeedback('success'); break;
+                case 'KeyM': e.preventDefault(); registerAttempt(false); hapticFeedback('miss'); break;
+                case 'KeyU': e.preventDefault(); undoLastAttempt(); break;
+                case 'KeyF': e.preventDefault(); toggleFullscreen(); break;
+            }
+        });
+
+        let touchStartX = 0;
+        document.addEventListener('touchstart', (e) => { touchStartX = e.changedTouches[0].screenX; }, { passive: true });
+        document.addEventListener('touchend', (e) => {
+            const diff = touchStartX - e.changedTouches[0].screenX;
+            if (Math.abs(diff) > 50) {
+                if (diff > 0) { registerAttempt(false); hapticFeedback('miss'); }
+                else { registerAttempt(true); hapticFeedback('success'); }
+            }
+        }, { passive: true });
+
+        function hapticFeedback(type) {
+            if ('vibrate' in navigator) {
+                switch(type) {
+                    case 'success': navigator.vibrate([50, 30, 50]); break;
+                    case 'miss': navigator.vibrate([100]); break;
+                    case 'milestone': navigator.vibrate([50, 30, 50, 30, 100]); break;
+                }
+            }
+        }
+
+        window.onload = function() {
+            loadState();
+            updateSportPreset();
+            renderAll();
+            document.addEventListener('click', requestWakeLock, { once: true });
+            document.addEventListener('touchstart', requestWakeLock, { once: true });
+            // Hide action buttons initially
+            document.getElementById('action-buttons-row').style.display = 'none';
+            document.getElementById('save-button-row').style.display = 'none';
+        };
+
+        function saveState() { localStorage.setItem('personal_ball_tracker_db', JSON.stringify(state.sessions)); }
+        function loadState() {
+            const saved = localStorage.getItem('personal_ball_tracker_db');
+            if (saved) { try { state.sessions = JSON.parse(saved); } catch (e) { console.error("Error loading:", e); } }
+        }
+
+        window.loadSampleData = function loadSampleData() {
+            state.sessions = [
+                { id: 's1', date: '2026-08-10 16:30', sport: '籃球罰球', scored: 38, missed: 12, accuracy: 76.0, maxStreak: 9, target: 50, note: '罰球線自主訓練' },
+                { id: 's2', date: '2026-08-12 18:00', sport: '籃球罰球', scored: 42, missed: 8, accuracy: 84.0, maxStreak: 14, target: 50, note: '手感極佳' }
+            ];
+            saveState(); renderAll(); showNotification('已載入示範數據！');
+        }
+
+        window.switchTab = function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(btn => { btn.classList.remove('active'); btn.classList.add('text-slate-400'); });
+            document.getElementById(`content-${tabName}`).classList.remove('hidden');
+            const activeBtn = document.getElementById(`tab-${tabName}`);
+            activeBtn.classList.add('active');
+            activeBtn.classList.remove('text-slate-400');
+            
+            // Show/hide action buttons only on counter tab
+            const showButtons = tabName === 'counter';
+            document.getElementById('action-buttons-row').style.display = showButtons ? 'flex' : 'none';
+            document.getElementById('save-button-row').style.display = showButtons ? 'flex' : 'none';
+            
+            if (tabName === 'analytics') renderCharts();
+        }
+
+        window.toggleSettings = function toggleSettings() { document.getElementById('settings-panel').classList.toggle('hidden'); }
+
+        window.updateSportPreset = function updateSportPreset() {
+            const sportSelect = document.getElementById('sport-type');
+            state.currentSession.sport = sportSelect.value;
+            const targetInput = document.getElementById('target-count');
+            if (sportSelect.value === 'basketball_free_throw' || sportSelect.value === 'basketball_three_pointer') targetInput.value = 50;
+            else if (sportSelect.value === 'football_penalty') targetInput.value = 20;
+            else targetInput.value = 30;
+            updateTargetDisplay();
+        }
+
+        window.updateTargetDisplay = function updateTargetDisplay() {
+            state.currentSession.target = parseInt(document.getElementById('target-count').value) || 0;
+            updateCounterUI();
+        }
+
+        window.registerAttempt = function registerAttempt(isScored) {
+            if (state.currentSession.sequence.length === 0) {
+                state.currentSession.startTime = Date.now();
+                requestWakeLock();
+            }
+            state.currentSession.sequence.push(isScored);
+            state.currentSession.shotTimestamps.push(Date.now());
+            if (isScored) {
+                state.currentSession.scored++;
+                state.currentSession.currentStreak++;
+                if (state.currentSession.currentStreak > state.currentSession.maxStreak) state.currentSession.maxStreak = state.currentSession.currentStreak;
+            } else {
+                state.currentSession.missed++;
+                state.currentSession.currentStreak = 0;
+            }
+            updateCounterUI();
+            renderShotSequence();
+        }
+
+        window.undoLastAttempt = function undoLastAttempt() {
+            if (state.currentSession.sequence.length === 0) return;
+            const last = state.currentSession.sequence.pop();
+            if (last) {
+                state.currentSession.scored = Math.max(0, state.currentSession.scored - 1);
+            } else {
+                state.currentSession.missed = Math.max(0, state.currentSession.missed - 1);
+            }
+            recalculateStreaks();
+            updateCounterUI();
+            renderShotSequence();
+        }
+
+        function recalculateStreaks() {
+            let cur = 0, max = 0;
+            state.currentSession.sequence.forEach(isScored => {
+                if (isScored) { cur++; if (cur > max) max = cur; }
+                else cur = 0;
+            });
+            state.currentSession.currentStreak = cur;
+            state.currentSession.maxStreak = max;
+        }
+
+        function updateCounterUI() {
+            const scored = state.currentSession.scored;
+            const missed = state.currentSession.missed;
+            const total = scored + missed;
+            const accuracy = total > 0 ? ((scored / total) * 100).toFixed(1) : '0.0';
+
+            document.getElementById('display-scored-count').innerText = scored;
+            document.getElementById('display-total-count').innerText = total;
+            document.getElementById('stat-accuracy').innerText = `${accuracy}%`;
+            document.getElementById('stat-total-attempts').innerText = total;
+            document.getElementById('stat-current-streak').innerText = state.currentSession.currentStreak;
+            document.getElementById('stat-max-streak').innerText = state.currentSession.maxStreak;
+            document.getElementById('display-missed-count').innerText = missed;
+
+            const streakBadge = document.getElementById('streak-badge');
+            if (state.currentSession.currentStreak >= 3) {
+                streakBadge.classList.remove('hidden');
+                streakBadge.classList.add('streak-active');
+            } else {
+                streakBadge.classList.add('hidden');
+                streakBadge.classList.remove('streak-active');
+            }
+
+            if (total > 0 && total % 10 === 0) { hapticFeedback('milestone'); showNotification(currentLang === 'en' ? `🎯 ${total} shots completed!` : (currentLang === 'zh-CN' ? `🎯 完成${total}球！` : `🎯 完成${total}球！`)); }
+            if (state.currentSession.maxStreak >= 5 && state.currentSession.maxStreak % 5 === 0) {
+                hapticFeedback('milestone'); showNotification(currentLang === 'en' ? `🔥 Streak: ${state.currentSession.maxStreak}!` : (currentLang === 'zh-CN' ? `🔥 连续命中${state.currentSession.maxStreak}球！` : `🔥 連續命中${state.currentSession.maxStreak}球！`));
+            }
+
+            const target = state.currentSession.target;
+            const progressText = document.getElementById('target-progress-text');
+            const percentText = document.getElementById('target-percentage-text');
+            const progressBar = document.getElementById('target-progress-bar');
+
+            if (target > 0) {
+                const pct = Math.min(100, Math.round((total / target) * 100));
+                progressText.innerText = `目標進度: ${total} / ${target}`;
+                percentText.innerText = `${pct}%`;
+                progressBar.style.width = `${pct}%`;
+                if (total >= target && !state.currentSession.targetReached) {
+                    state.currentSession.targetReached = true;
+                    hapticFeedback('milestone');
+                    showNotification(currentLang === 'en' ? `🏆 Target reached! ${target} shots!` : (currentLang === 'zh-CN' ? `🏆 目标达成！完成${target}球！` : `🏆 目標達成！完成${target}球！`));
+                }
+            } else {
+                progressText.innerText = `已完成: ${total} 球`;
+                percentText.innerText = '--';
+                progressBar.style.width = '100%';
+            }
+
+            renderShotSequence();
+        }
+
+        function renderShotSequence() {
+            const container = document.getElementById('shot-sequence-container');
+            const sequence = state.currentSession.sequence;
+            if (sequence.length === 0) {
+                container.innerHTML = `<span class="text-xs text-slate-600 italic">尚未開始投球紀錄</span>`;
+                return;
+            }
+            // Show all shots, scrolling to show latest
+            container.innerHTML = sequence.map((isScored, index) => `
+                <div class="shot-dot ${isScored ? 'bg-emerald-500/30 text-emerald-400 border border-emerald-500/50' : 'bg-rose-500/30 text-rose-400 border border-rose-500/50'}" title="第${index + 1}次">
+                    ${isScored ? '<i class="fa-solid fa-check"></i>' : '<i class="fa-solid fa-xmark"></i>'}
+                </div>
+            `).join('');
+            // Auto-scroll to the right to show the latest shots
+            container.scrollLeft = container.scrollWidth;
+        }
+
+        function resetCurrentSession() {
+            state.currentSession.scored = 0;
+            state.currentSession.missed = 0;
+            state.currentSession.sequence = [];
+            state.currentSession.currentStreak = 0;
+            state.currentSession.maxStreak = 0;
+            state.currentSession.startTime = null;
+            state.currentSession.shotTimestamps = [];
+            state.currentSession.targetReached = false;
+            updateCounterUI();
+        }
+
+        window.saveCurrentSession = function saveCurrentSession() {
+            const total = state.currentSession.scored + state.currentSession.missed;
+            if (total === 0) { showNotification('尚未紀錄任何入球或失球！', 'warning'); return; }
+
+            const now = new Date();
+            const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+            const sport = document.getElementById('sport-type').value;
+            const note = document.getElementById('session-note').value.trim() || '自主練習';
+            const scored = state.currentSession.scored;
+            const missed = state.currentSession.missed;
+            const accuracy = parseFloat(((scored / total) * 100).toFixed(1));
+
+            state.sessions.unshift({
+                id: 'session_' + Date.now(), date: dateStr, sport, scored, missed, accuracy,
+                maxStreak: state.currentSession.maxStreak, target: state.currentSession.target, note
+            });
+            saveState();
+            resetCurrentSession();
+            document.getElementById('session-note').value = '';
+            renderAll();
+            showNotification(`✓ 已儲存！命中率: ${accuracy}% (${scored}/${total})`);
+            switchTab('history');
+        }
+
+        function openResetModal() {
+            if (confirm('確定要清空所有數據嗎？')) {
+                state.sessions = [];
+                saveState();
+                resetCurrentSession();
+                renderAll();
+                showNotification('已重置所有數據');
+            }
+        }
+
+        window.renderAll = function renderAll() { renderHistoryList(); renderAnalyticsKPI(); }
+
+        function renderAnalyticsKPI() {
+            let totalScored = 0, totalMissed = 0, bestAccuracy = 0;
+            state.sessions.forEach(s => {
+                totalScored += s.scored;
+                totalMissed += s.missed;
+                if (s.accuracy > bestAccuracy) bestAccuracy = s.accuracy;
+            });
+            const grandTotal = totalScored + totalMissed;
+            const avgAccuracy = grandTotal > 0 ? ((totalScored / grandTotal) * 100).toFixed(1) : '0.0';
+            document.getElementById('analytics-total-scored').innerText = totalScored;
+            document.getElementById('analytics-total-missed').innerText = totalMissed;
+            document.getElementById('analytics-avg-accuracy').innerText = `${avgAccuracy}%`;
+            document.getElementById('analytics-best-accuracy').innerText = `${bestAccuracy.toFixed(1)}%`;
+        }
+
+        function renderHistoryList() {
+            const container = document.getElementById('history-list-container');
+            if (state.sessions.length === 0) {
+                container.innerHTML = `<div class="text-center py-10 text-slate-500 bg-slate-900/40 rounded-xl border border-dashed border-slate-700"><i class="fa-solid fa-clipboard text-3xl mb-2"></i><p class="text-sm">尚無練習紀錄</p></div>`;
+                return;
+            }
+            container.innerHTML = state.sessions.map(s => {
+                const total = s.scored + s.missed;
+                let badgeClass = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
+                if (s.accuracy < 50) badgeClass = 'bg-rose-500/10 text-rose-400 border-rose-500/30';
+                else if (s.accuracy < 75) badgeClass = 'bg-amber-500/10 text-amber-400 border-amber-500/30';
+                return `
+                <div class="history-item rounded-xl p-4">
+                    <div class="flex justify-between items-start">
+                        <div class="flex items-center gap-3">
+                            <div class="px-3 py-2 rounded-xl text-center border ${badgeClass}">
+                                <div class="text-xs font-bold">${s.accuracy}%</div>
+                            </div>
+                            <div>
+                                <div class="font-bold text-white">${s.sport}</div>
+                                <div class="text-xs text-slate-400 mt-0.5">${s.note}</div>
+                                <div class="text-xs text-slate-500 mt-1">${s.date}</div>
+                            </div>
+                        </div>
+                        <button onclick="deleteSession('${s.id}')" class="text-rose-400 hover:text-rose-300 p-2"><i class="fa-solid fa-trash-can"></i></button>
+                    </div>
+                    <div class="flex gap-4 mt-3 text-xs text-slate-400">
+                        <span class="text-emerald-400"><i class="fa-solid fa-circle-check mr-1"></i>入球: ${s.scored}</span>
+                        <span class="text-rose-400"><i class="fa-solid fa-circle-xmark mr-1"></i>失球: ${s.missed}</span>
+                        <span><i class="fa-solid fa-fire mr-1 text-amber-400"></i>最高連中: ${s.maxStreak || 0}</span>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        window.deleteSession = function deleteSession(id) {
+            if (confirm('確定刪除這筆紀錄？')) {
+                state.sessions = state.sessions.filter(s => s.id !== id);
+                saveState();
+                renderAll();
+                showNotification('已刪除紀錄');
+            }
+        }
+
+        function renderCharts() {
+            const sessionsChronological = [...state.sessions].reverse();
+            const labels = sessionsChronological.map((s, idx) => `#${idx + 1}`);
+            const accuracyData = sessionsChronological.map(s => s.accuracy);
+
+            const ctxTrend = document.getElementById('chart-accuracy-trend').getContext('2d');
+            if (accuracyTrendChart) accuracyTrendChart.destroy();
+            accuracyTrendChart = new Chart(ctxTrend, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '命中率 (%)',
+                        data: accuracyData,
+                        borderColor: '#22c55e',
+                        backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                        borderWidth: 2,
+                        pointRadius: 4,
+                        pointBackgroundColor: '#22c55e',
+                        tension: 0.3,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { ticks: { color: '#64748b', maxTicksLimit: 6 }, grid: { color: '#1e293b' } },
+                        y: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' }, min: 0, max: 100 }
+                    }
+                }
+            });
+
+            let totalScored = 0, totalMissed = 0;
+            state.sessions.forEach(s => { totalScored += s.scored; totalMissed += s.missed; });
+
+            const ctxRatio = document.getElementById('chart-ratio').getContext('2d');
+            if (ratioChart) ratioChart.destroy();
+            ratioChart = new Chart(ctxRatio, {
+                type: 'doughnut',
+                data: {
+                    labels: ['入球', '失球'],
+                    datasets: [{ data: [totalScored, totalMissed], backgroundColor: ['#22c55e', '#ef4444'], borderWidth: 0 }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, cutout: '70%',
+                    plugins: { legend: { position: 'bottom', labels: { color: '#94a3b8', padding: 15 } } }
+                }
+            });
+        }
+
+        window.exportCSV = function exportCSV() {
+            if (state.sessions.length === 0) { alert('尚無練習紀錄可匯出！'); return; }
+            let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+            csvContent += "日期時間,球類項目,備註,入球數,失球數,命中率(%),最高連中,目標球數\n";
+            state.sessions.forEach(s => {
+                csvContent += `"${s.date}","${s.sport}","${s.note}",${s.scored},${s.missed},${s.accuracy},${s.maxStreak || 0},${s.target}\n`;
+            });
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `ball_sports_stats_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        window.toggleFullscreen = function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => console.log('Fullscreen error:', err));
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        function showNotification(msg, type = 'success') {
+            const toast = document.createElement('div');
+            const bgClass = type === 'warning' ? 'bg-amber-600' : 'bg-emerald-600';
+            toast.className = `fixed top-20 left-4 right-4 ${bgClass} text-white text-sm font-bold px-4 py-3 rounded-xl shadow-2xl z-50 transition-transform duration-300 flex items-center gap-2 transform translate-y-0`;
+            toast.innerHTML = `<i class="fa-solid fa-circle-check"></i> ${msg}`;
+            document.body.appendChild(toast);
+            setTimeout(() => {
+                toast.style.transform = 'translateY(-100px)';
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
+            }, 2500);
+        }
+    </script>
+</body>
+</html>
